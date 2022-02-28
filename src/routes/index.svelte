@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { searchDict } from '../lib/search';
-	import qs from 'qs';
 	import { onMount } from 'svelte';
+	import { services, Url } from '../lib/url';
 
 	let time = new Date();
 	let query = '';
+	let match: Url | undefined;
 
 	const autofocus = (node: HTMLInputElement) => node.focus();
 	const keyListener = async (e: KeyboardEvent) => {
@@ -17,15 +17,6 @@
 		}
 	};
 
-	$: console.log({ query });
-	$: {
-		if (typeof document !== 'undefined') {
-			query === ''
-				? document.addEventListener('keydown', initialKeyDown)
-				: document.removeEventListener('keydown', initialKeyDown);
-		}
-	}
-
 	onMount(() => {
 		const interval = setInterval(() => (time = new Date()), 1000);
 		document.addEventListener('keydown', initialKeyDown);
@@ -36,35 +27,46 @@
 		};
 	});
 
-	$: hours = time.getHours();
-	$: minutes = time.getMinutes();
-	$: seconds = time.getSeconds();
+	const addZero = (time: number) => (time >= 10 ? '' + time : '0' + time);
+
+	$: hours = addZero(time.getHours());
+	$: minutes = addZero(time.getMinutes());
+	$: seconds = addZero(time.getSeconds());
+	$: {
+		if (typeof document !== 'undefined') {
+			query === ''
+				? document.addEventListener('keydown', initialKeyDown)
+				: document.removeEventListener('keydown', initialKeyDown);
+		}
+	}
+
+	const extractShortName = (str: string) => (str.includes("'") ? str.split("'")[0] : str);
+
+	$: {
+		if (typeof document !== 'undefined') {
+			match = services.findByShortName(extractShortName(query));
+			if (match) document.body.style.backgroundColor = match.color;
+			else document.body.style.backgroundColor = '#222';
+		}
+	}
 
 	const openInTab = (url: string) => window.open(url, '_blank');
 
 	const onSubmit = () => {
 		const q = query.trim().toLowerCase();
 		// simple open with one letter
-		if (q in searchDict) {
-			openInTab(searchDict[q].domain);
+		const found = services.findByShortName(q);
+		if (found) {
+			openInTab(found.homepage);
 			query = '';
 		}
 
 		// search in a service
 		if (/^[a-z]+!.*/.test(q)) {
-			console.log('sup');
 			const [service, searchQuery] = q.split('!');
-			if (service in searchDict) {
-				const found = searchDict[service];
-				const url =
-					found.domain +
-					(found.searchSubDomain ? found.searchSubDomain + '/' : '') +
-					'?' +
-					qs.stringify({
-						...found.additionalSearchParams,
-						[found.searchParam || 'q']: searchQuery
-					});
-				openInTab(url);
+			const found = services.findByShortName(service);
+			if (found) {
+				openInTab(found.searchLink(searchQuery));
 				query = '';
 			}
 		}
@@ -93,5 +95,8 @@
 			type="search"
 			on:keydown={keyListener}
 		/>
+		{#if match}
+			<p class="text-3xl text-center">{match.name}</p>
+		{/if}
 	</form>
 {/if}
